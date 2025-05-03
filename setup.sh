@@ -1,17 +1,22 @@
 #!/bin/bash
 
-# Description: Deploys Pi-hole and configures DNS records.
+# Description: Deploys Pi-hole and configures DNS records:
 #   - Installs Docker and Docker Compose plugin from Docker's official repository (if not already installed)
 #   - Deploys Pi-hole containers
+#   - Configure custom DNS records using dnsmasq configuration file
 #
 # Requires:
-#   - A .env file with the following variables:
+#   - A `.env` file with the following variables:
 #       FTLCONF_dns_upstreams: DNS servers separated by semicolon
 #       FTLCONF_webserver_api_password: Password for the Pi-hole web interface
 #       HOST_IP: IP address of the Raspberry Pi 3B+ host
 #       HOSTNAME: Hostname for the Pi-hole container
 #       PIHOLE_IP: Static IP address for the Pi-hole container
+#       PIHOLE_MAC: MAC address for the Pi-hole container
 #       TZ: Timezone (e.g., "Asia/Kolkata")
+#   - A `99-custom-dns.conf` file with custom DNS records:
+#         Each entry should be on a new line
+#         Format: "address=/<DOMAIN_NAME>/<IP_ADDRESS>"
 
 set -e
 
@@ -20,9 +25,15 @@ set -e
 # You may need to adjust this if your network setup is different
 PARENT_INTERFACE=$(ip route | grep default | awk '{print $5}')
 
-# Check if the .env file exists
+# Check if the `.env` file exists
 if [[ ! -f .env ]]; then
   echo ".env file not found!"
+  exit 1
+fi
+
+# Check if the `99-custom-dns.conf` file exists
+if [[ ! -f 99-custom-dns.conf ]]; then
+  echo "99-custom-dns.conf file not found!"
   exit 1
 fi
 
@@ -51,10 +62,10 @@ done
 if command -v docker &>/dev/null && docker compose version &>/dev/null; then
   echo "Docker and Docker Compose plugin already installed — skipping installation steps [1-4]."
 else
-  echo "[1/6] Updating system packages"
+  echo "[1/7] Updating system packages"
   apt update && apt full-upgrade -y
 
-  echo "[2/6] Setting up Docker repository"
+  echo "[2/7] Setting up Docker repository"
   apt install -y ca-certificates curl gnupg lsb-release
   mkdir -p /etc/apt/keyrings
   curl -fsSL https://download.docker.com/linux/$(. /etc/os-release; echo "$ID")/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
@@ -65,15 +76,19 @@ else
 
   apt update
 
-  echo "[3/6] Installing Docker Engine and Docker Compose plugin"
+  echo "[3/7] Installing Docker Engine and Docker Compose plugin"
   apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 
-  echo "[4/6] Verifying Docker installation"
+  echo "[4/7] Verifying Docker installation"
   docker --version
   docker compose version
 fi
 
-echo "[5/6] Creating docker-compose.yml"
+echo "[5/7] Creating custom DNS records"
+mkdir -p /etc/dnsmasq.d/
+cp ./99-custom-dns.conf /etc/dnsmasq.d/
+
+echo "[6/7] Creating docker-compose.yml"
 cat > docker-compose.yml <<EOF
 version: "3.8"
 
@@ -85,10 +100,12 @@ services:
         restart: unless-stopped
         environment:
             FTLCONF_dns_upstreams: "${FTLCONF_dns_upstreams}"
+            FTLCONF_misc_etc_dnsmasq_d: True
             FTLCONF_webserver_api_password: "${FTLCONF_webserver_api_password}"
             TZ: "${TZ}"
         volumes:
             - "/etc/pihole:/etc/pihole:rw"
+            - "/etc/dnsmasq.d:/etc/dnsmasq.d:rw"
         ports:
             - "${PIHOLE_IP}:53:53/tcp"
             - "${PIHOLE_IP}:53:53/udp"
@@ -96,6 +113,7 @@ services:
             - "${PIHOLE_IP}:443:443/tcp"
         networks:
             pihole_network:
+                mac_address: "${PIHOLE_MAC}"
                 ipv4_address: "${PIHOLE_IP}"
 
 networks:
@@ -110,7 +128,7 @@ networks:
               gateway: 192.168.1.1
 EOF
 
-echo "[6/6] Starting services via Docker Compose"
+echo "[7/7] Starting services via Docker Compose"
 docker compose up -d
 
 echo "Setup completed successfully!"
