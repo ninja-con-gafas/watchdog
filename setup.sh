@@ -2,6 +2,12 @@
 
 set -e
 
+# Ensure script is run with sudo
+if [[ "$EUID" -ne 0 ]]; then
+  echo "Please run this script with sudo."
+  exit 1
+fi
+
 # Check if the `.env` file exists
 if [[ ! -f .env ]]; then
   echo ".env file not found!"
@@ -18,16 +24,24 @@ fi
 echo "Loading environment variables from .env"
 set -a
 . .env
+if [[ -z "$PARENT_INTERFACE" ]]; then
+  PARENT_INTERFACE="$(ip route | awk '/default/ {print $5; exit}')"
+  echo "Using default PARENT_INTERFACE: $PARENT_INTERFACE"
+  echo "If this is not correct, please set it in the .env file."
+  echo -e "\nPARENT_INTERFACE=\"$PARENT_INTERFACE\"" >> .env
+  export PARENT_INTERFACE
+fi
+if [[ -z "$PROXMOX_PORT" ]]; then
+  PROXMOX_PORT=8006
+  echo "Using default PROXMOX_PORT: $PROXMOX_PORT"
+  echo "If this is not correct, please set it in the .env file."
+  echo -e "\nPROXMOX_PORT=\"$PROXMOX_PORT\"" >> .env
+  export PROXMOX_PORT
+fi
 set +a
 
-# Ensure script is run with sudo
-if [[ "$EUID" -ne 0 ]]; then
-  echo "Please run this script with sudo."
-  exit 1
-fi
-
 # Validate required environment variables
-required_vars=(FTLCONF_dns_upstreams FTLCONF_webserver_api_password HOST_IP HOSTNAME PIHOLE_IP PIHOLE_MAC TZ)
+required_vars=(FTLCONF_dns_upstreams FTLCONF_webserver_api_password HOST_IP HOSTNAME PIHOLE_IP PIHOLE_MAC PROXMOX_IP PROXMOX_MAC TZ)
 for var in "${required_vars[@]}"; do
     if [[ -z "${!var}" ]]; then
         echo "Missing required variable: $var"
@@ -66,6 +80,6 @@ mkdir -p /etc/dnsmasq.d/
 cp ./99-custom-dns.conf /etc/dnsmasq.d/
 
 echo "[6/6] Starting services via Docker Compose"
-docker compose up -d
+docker compose up --build -d
 
 echo "Setup completed successfully!"

@@ -24,6 +24,16 @@ services:
                 mac_address: "${PIHOLE_MAC}"
                 ipv4_address: "${PIHOLE_IP}"
 
+    gatekeeper:
+        build: ./gatekeeper
+        container_name: gatekeeper
+        restart: unless-stopped
+        env_file:
+            - ./.env
+        network_mode: "host"
+        depends_on:
+            - pihole
+
 networks:
     pihole_network:
         name: pihole_network

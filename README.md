@@ -87,10 +87,13 @@ The stack is containerized and can be easily deployed using Docker Compose. To d
     FTLCONF_webserver_api_password="" # Password for accessing the Pi-hole admin web interface
     HOST_IP="" # IP address of the Raspberry Pi 3B+ host
     HOSTNAME="" # Hostname for the Pi-hole container
-    PARENT_INTERFACE="$(ip route | grep default | awk '{print $5}')" # Pi-hole network interface, assumes default route set; adjust if needed
+    PARENT_INTERFACE="" # Pi-hole network interface, defaults to `$(ip route | grep default | awk '{print $5}')` if not set
     PIHOLE_IP="" # Static IP address for the Pi-hole container
     PIHOLE_MAC="" # MAC address for the Pi-hole container
-    TZ= "" # Your Timezone
+    PROXMOX_IP="" # Static IP address of Proxmox hypervisor host
+    PROXMOX_MAC="" # MAC address of Proxmox hypervisor host
+    PROXMOX_PORT="" # Port of Proxmox Hypervisor, defaults to `8006` if not set 
+    TZ="" # Your Timezone
     ```
 3. Create a `99-custom-dns.conf` file with custom DNS records:
     - Each entry should be on a new line and the DNS records should be in the given format `address=/<DOMAIN_NAME>/<IP_ADDRESS>`
