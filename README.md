@@ -1,6 +1,6 @@
 # Raspberry Pi Microserver Gateway: Secure Access & Service Routing
 
-This project configures a **Raspberry Pi 3B+** as a lightweight and secure **gateway node** for self-hosted infrastructure. Acting as a front-facing control plane, the Pi manages **network access**, **DNS resolution**, **reverse proxy routing**, and **power state orchestration** for a Proxmox-based private cloud setup.
+This project configures a **Raspberry Pi 3B+** as a lightweight and secure **gateway node** for self-hosted infrastructure. Acting as a front-facing control plane, the Pi manages **network access**, **DNS resolution**, **conditional reverse proxy routing**, and **power state orchestration** for a Proxmox-based private cloud setup.
 
 > All access to internal services is strictly gated through a **VPN** tunnel using **WireGuard**, enhancing security while maintaining accessibility.
 
@@ -18,15 +18,15 @@ This setup is designed for **headless operation** and remote administration over
 
 ## Component Matrix
 
-| Functionality      | Tool / Technology            | Hosted On      |
-|--------------------|------------------------------|----------------|
-| Operating System   | Raspberry Pi OS Lite (64-bit)| Raspberry Pi   |
-| Reverse Proxy      | **Traefik**                  | Raspberry Pi   |
-| VPN Server         | **WireGuard**                | Raspberry Pi   |
-| DNS Resolver       | **Pi-hole**                  | Raspberry Pi   |
-| Wake-on-LAN (WoL)  | `wakeonlan` CLI              | Raspberry Pi   |
-| Proxmox Monitoring | Proxmox API (Idle detection) | Raspberry Pi   |
-| Remote Shutdown    | Key-authenticated SSH        | Pi → Proxmox   |
+| Functionality      | Tool / Technology             | Hosted On      |
+|--------------------|-------------------------------|----------------|
+| Operating System   | Raspberry Pi OS Lite (64-bit) | Raspberry Pi   |
+| Conditional Routing| **OpenResty (Nginx + Lua)**   | Raspberry Pi   |
+| VPN Server         | **WireGuard**                 | Raspberry Pi   |
+| DNS Resolver       | **Pi-hole**                   | Raspberry Pi   |
+| Wake-on-LAN (WoL)  | `wakeonlan` CLI               | Raspberry Pi   |
+| Proxmox Monitoring | TCP Port Check + Lua Logic    | Raspberry Pi   |
+| Remote Shutdown    | Key-authenticated SSH         | Pi → Proxmox   |
 
 ---
 
@@ -41,15 +41,16 @@ There are no ports open to the internet — ensuring a **zero-trust model** by d
 
 ---
 
-## Service Discovery & Reverse Proxy
+## Service Discovery & Conditional Reverse Proxy
 
-### Traefik (Dynamic Reverse Proxy)
-- Automatically detects running containers via Proxmox API.
-- Routes traffic to backend services with minimal configuration.
-- Exposes a **web dashboard** (VPN-only) to monitor health, routing rules, and certificates (if enabled).
+### OpenResty (Nginx + Lua)
+- Uses **Lua scripting** inside Nginx to determine if Proxmox is reachable on port `8006`.
+- If **Proxmox is available**, requests are **proxied directly** to its hosted services (e.g., Grafana, Prometheus).
+- If **Proxmox is offline**, requests are routed to a local middleware (`proxmox-gatekeeper`) running on the Pi.
+- This ensures high availability of a control interface while minimizing Proxmox’s active uptime.
 
 ### Pi-hole (DNS Resolver & Blocker)
-- Resolves container services using meaningful domain names (e.g., `grafana.local`, `node-red.local`).
+- Resolves container services using meaningful domain names (e.g., `grafana.lan`, `prometheus.lan`).
 - Optionally blocks ads and telemetry requests across all clients on the VPN and LAN.
 - Provides DNS usage analytics and logs.
 
@@ -58,7 +59,7 @@ There are no ports open to the internet — ensuring a **zero-trust model** by d
 ## Additional Features
 
 - **Wake-on-LAN**: Uses `wakeonlan` CLI to remotely boot Proxmox nodes on demand.
-- **Idle Detection**: Queries Proxmox APIs to determine resource idleness for automated decisions.
+- **Conditional Access**: Access to internal services is dependent on the real-time availability of Proxmox.
 - **Remote Shutdown**: Uses SSH (with key-based auth) from the Pi to issue shutdown commands to Proxmox nodes, saving power during inactivity.
 
 ---
@@ -97,7 +98,18 @@ The stack is containerized and can be easily deployed using Docker Compose. To d
     ```
 3. Create a `99-custom-dns.conf` file with custom DNS records:
     - Each entry should be on a new line and the DNS records should be in the given format `address=/<DOMAIN_NAME>/<IP_ADDRESS>`
-4. Run the setup script with **_super-user_** privilage:
+4. Create a `services.json` file with services for conditional routing:
+    - The file should be a valid JSON object where each key is a service hostname and the value is an object defining the target address.
+
+    ```json
+    {
+        "service.hostname": {"target": "<IP_ADDRESS>:<PORT>"},
+        ...
+    }
+    ```
+    - The keys must match the exact hostname used in requests.
+    - The `target` value specifies the backend IP and port for that service.
+5. Run the setup script with **_super-user_** privilege:
     ```bash
     sudo ./setup.sh
     ```
@@ -107,4 +119,5 @@ This script will:
 - Install Docker and Docker Compose
 - Configure environment variables
 - Launch all defined services
+
 ---

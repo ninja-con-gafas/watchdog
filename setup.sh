@@ -20,6 +20,12 @@ if [[ ! -f 99-custom-dns.conf ]]; then
   exit 1
 fi
 
+# Check if the `services.json` file exists
+if [[ ! -f services.json ]]; then
+  echo "services.json file not found!"
+  exit 1
+fi
+
 # Load environment variables from .env
 echo "Loading environment variables from .env"
 set -a
@@ -53,10 +59,10 @@ done
 if command -v docker &>/dev/null && docker compose version &>/dev/null; then
   echo "Docker and Docker Compose plugin already installed — skipping installation steps [1-4]."
 else
-  echo "[1/6] Updating system packages"
+  echo "[1/7] Updating system packages"
   apt update && apt full-upgrade -y
 
-  echo "[2/6] Setting up Docker repository"
+  echo "[2/7] Setting up Docker repository"
   apt install -y ca-certificates curl gnupg lsb-release
   mkdir -p /etc/apt/keyrings
   curl -fsSL https://download.docker.com/linux/$(. /etc/os-release; echo "$ID")/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
@@ -67,19 +73,25 @@ else
 
   apt update
 
-  echo "[3/6] Installing Docker Engine and Docker Compose plugin"
+  echo "[3/7] Installing Docker Engine and Docker Compose plugin"
   apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 
-  echo "[4/6] Verifying Docker installation"
+  echo "[4/7] Verifying Docker installation"
   docker --version
   docker compose version
 fi
 
-echo "[5/6] Creating custom DNS records"
+echo "[5/7] Configuring custom DNS records"
 mkdir -p /etc/dnsmasq.d/
 cp ./99-custom-dns.conf /etc/dnsmasq.d/
 
-echo "[6/6] Starting services via Docker Compose"
+echo "[6/7] Configuring reverse proxy"
+mkdir -p /etc/openresty/ /usr/local/openresty/nginx/conf/
+cp ./reverse-proxy/routes.lua /etc/openresty/
+cp ./services.json /etc/openresty/
+cp ./reverse-proxy/nginx.conf /usr/local/openresty/nginx/conf/
+
+echo "[7/7] Starting services via Docker Compose"
 docker compose up --build -d
 
 echo "Setup completed successfully!"

@@ -1,6 +1,25 @@
 version: "3.8"
 
 services:
+    openresty:
+        image: openresty/openresty:1.21.4.1-0-alpine
+        container_name: openresty
+        restart: unless-stopped
+        env_file:
+            - ./.env
+        volumes:
+            - /etc/openresty/routes.lua:/etc/openresty/routes.lua:ro
+            - /etc/openresty/services.json:/etc/openresty/services.json:ro
+            - /usr/local/openresty/nginx/conf/nginx.conf:/usr/local/openresty/nginx/conf/nginx.conf:ro
+        ports:
+            - "80:80"
+            - "443:443"
+        networks:
+            - watchdog_network
+        depends_on:
+            - pihole
+            - gatekeeper
+
     pihole:
         image: pihole/pihole:2025.04.0
         container_name: pihole
@@ -44,3 +63,7 @@ networks:
           config:
             - subnet: 192.168.1.0/24
               gateway: 192.168.1.1
+
+    watchdog_network:
+        name: watchdog_network
+        driver: bridge
