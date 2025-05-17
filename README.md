@@ -1,8 +1,15 @@
-# Raspberry Pi Microserver Gateway: Secure Access & Service Routing
+# Watchdog: A Secure Raspberry Pi Microserver Gateway for Private Cloud
 
-This project configures a **Raspberry Pi 3B+** as a lightweight and secure **gateway node** for self-hosted infrastructure. Acting as a front-facing control plane, the Pi manages **network access**, **DNS resolution**, **conditional reverse proxy routing**, and **power state orchestration** for a Proxmox-based private cloud setup.
+A lightweight, containerized gateway for home-lab and private cloud environments, built for the Raspberry Pi 3B+. Watchdog act as a front facing control panel that provides secure, VPN-gated access, DNS resolution, conditional reverse proxy routing, and power state orchestration for Proxmox-based infrastructure.
 
-> All access to internal services is strictly gated through a **VPN** tunnel using **WireGuard**, enhancing security while maintaining accessibility.
+---
+
+## Features
+- **Zero-trust access**: All services are only accessible via WireGuard VPN or local LAN (intranet).
+- **Conditional reverse proxy**: OpenResty (Nginx + Lua) dynamically routes requests based on Proxmox availability.
+- **Private DNS**: Pi-hole resolves internal service names and blocks advertisement and telemetry.
+- **Wake-on-LAN & Power Management**: Remotely boot or shutdown Proxmox nodes from the Pi.
+- **Headless, containerized deployment**: All services run in Docker containers for easy management.
 
 ---
 
@@ -10,7 +17,7 @@ This project configures a **Raspberry Pi 3B+** as a lightweight and secure **gat
 
 - **Host Hardware**: Raspberry Pi 3B+
 - **Container Runtime**: Docker with Docker Compose
-- **Network Access**: VPN-only (WireGuard)
+- **Network Access**: VPN-only (WireGuard) or intranet
 
 This setup is designed for **headless operation** and remote administration over a secure tunnel, enabling clean, modular service deployment using containers.
 
@@ -18,61 +25,24 @@ This setup is designed for **headless operation** and remote administration over
 
 ## Component Matrix
 
-| Functionality      | Tool / Technology             | Hosted On      |
-|--------------------|-------------------------------|----------------|
-| Operating System   | Raspberry Pi OS Lite (64-bit) | Raspberry Pi   |
-| Conditional Routing| **OpenResty (Nginx + Lua)**   | Raspberry Pi   |
-| VPN Server         | **WireGuard**                 | Raspberry Pi   |
-| DNS Resolver       | **Pi-hole**                   | Raspberry Pi   |
-| Wake-on-LAN (WoL)  | `wakeonlan` CLI               | Raspberry Pi   |
-| Proxmox Monitoring | TCP Port Check + Lua Logic    | Raspberry Pi   |
-| Remote Shutdown    | Key-authenticated SSH         | Pi → Proxmox   |
+| Functionality               | Tool and Technology                     | Hosted On      |
+|-----------------------------|-----------------------------------------|----------------|
+| Operating System            | Raspberry Pi OS Lite (64-bit)           | Raspberry Pi   |
+| Conditional Routing         | OpenResty (Nginx + Lua)                 | Raspberry Pi   |
+| VPN Server                  | WireGuard                               | Raspberry Pi   |
+| DNS Resolver                | Pi-hole                                 | Raspberry Pi   |
+| Proxmox Power Orchestration | Wake-on-LAN, TCP Port Check & Streamlit | Raspberry Pi   |
+| Remote Shutdown             | Key-authenticated SSH                   | Raspberry Pi   |
 
 ---
 
-## Access Control Model
-
-All services hosted under the private cloud infrastructure are **completely isolated from the public internet**. Access is strictly controlled via:
-
-- **Local LAN (intranet)** through the Raspberry Pi
-- **Remote access** via **WireGuard VPN**, which tunnels into the local network
-
-There are no ports open to the internet — ensuring a **zero-trust model** by default.
-
----
-
-## Service Discovery & Conditional Reverse Proxy
-
-### OpenResty (Nginx + Lua)
-- Uses **Lua scripting** inside Nginx to determine if Proxmox is reachable on port `8006`.
-- If **Proxmox is available**, requests are **proxied directly** to its hosted services (e.g., Grafana, Prometheus).
-- If **Proxmox is offline**, requests are routed to a local middleware (`proxmox-gatekeeper`) running on the Pi.
-- This ensures high availability of a control interface while minimizing Proxmox’s active uptime.
-
-### Pi-hole (DNS Resolver & Blocker)
-- Resolves container services using meaningful domain names (e.g., `grafana.lan`, `prometheus.lan`).
-- Optionally blocks ads and telemetry requests across all clients on the VPN and LAN.
-- Provides DNS usage analytics and logs.
-
----
-
-## Additional Features
-
-- **Wake-on-LAN**: Uses `wakeonlan` CLI to remotely boot Proxmox nodes on demand.
-- **Conditional Access**: Access to internal services is dependent on the real-time availability of Proxmox.
-- **Remote Shutdown**: Uses SSH (with key-based auth) from the Pi to issue shutdown commands to Proxmox nodes, saving power during inactivity.
-
----
-
-## Use Case & Purpose
-
-This project addresses the need for a **lightweight edge controller** in home-lab environments where:
-
-- Public exposure of self-hosted services is undesirable.
-- There's a need for **secure, VPN-tunneled access** to a Proxmox-hosted cloud.
-- Services require **clean routing**, **private DNS resolution**, and **power management** through a single point of control.
-
-The Raspberry Pi operates as a **service orchestrator** and **network access controller**, empowering safe, remote administration of a private infrastructure.
+## How It Works
+- **DNS**: Pi-hole resolves internal service names.
+- **Reverse Proxy**: OpenResty uses Lua to check if Proxmox is up:
+  - If **up**: Requests are forwarded to Proxmox or mapped services.
+  - If **down**: Requests are routed to the Gatekeeper for status and Wake-on-LAN.
+- **Wake-on-LAN**: Gatekeeper lets you wake Proxmox nodes if they're offline.
+- **Remote Shutdown**: Pi can send SSH shutdown commands to Proxmox for power savings.
 
 ---
 
