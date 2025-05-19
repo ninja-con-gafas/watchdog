@@ -1,11 +1,11 @@
 # Watchdog: A Secure Raspberry Pi Microserver Gateway for Private Cloud
 
-A lightweight, containerized gateway for home-lab and private cloud environments, built for the Raspberry Pi 3B+. Watchdog acts as a front-facing control panel that provides secure, VPN-gated access, DNS resolution, conditional reverse proxy routing, and power state orchestration for Proxmox-based infrastructure.
+A lightweight, containerized gateway for home-lab and private cloud environments, built for the Raspberry Pi 3B+. Watchdog acts as a front-facing control panel that provides secure local network access, DNS resolution, conditional reverse proxy routing, and power state orchestration for Proxmox-based infrastructure.
 
 ---
 
 ## Features
-- **Zero-trust access**: All services are only accessible via WireGuard VPN or local LAN (intranet).
+- **Restricted access**: All services are accessible only via the local LAN (intranet), with no direct exposure to the internet.
 - **Conditional reverse proxy**: OpenResty (Nginx + Lua) dynamically routes requests based on Proxmox availability.
 - **Private DNS**: Pi-hole resolves internal service names and blocks advertisement and telemetry.
 - **Wake-on-LAN & Power Management**: Remotely boot or shutdown Proxmox nodes from the Pi.
@@ -17,9 +17,9 @@ A lightweight, containerized gateway for home-lab and private cloud environments
 
 - **Host Hardware**: Raspberry Pi 3B+
 - **Container Runtime**: Docker with Docker Compose
-- **Network Access**: VPN-only (WireGuard) or intranet
+- **Network Access**: Local LAN (intranet) only
 
-This setup is designed for **headless operation** and remote administration over a secure tunnel, enabling clean, modular service deployment using containers.
+This setup is designed for **headless operation** and remote administration within a secured local network, enabling clean, modular service deployment using containers.
 
 ---
 
@@ -29,7 +29,6 @@ This setup is designed for **headless operation** and remote administration over
 |-----------------------------|-----------------------------------------|----------------|
 | Operating System            | Raspberry Pi OS Lite (64-bit)           | Raspberry Pi   |
 | Conditional Routing         | OpenResty (Nginx + Lua)                 | Raspberry Pi   |
-| VPN Server                  | WireGuard                               | Raspberry Pi   |
 | DNS Resolver                | Pi-hole                                 | Raspberry Pi   |
 | Proxmox Power Orchestration | Wake-on-LAN, TCP Port Check & Streamlit | Raspberry Pi   |
 | Remote Shutdown             | Proxmox API with Token authenticated    | Raspberry Pi   |
