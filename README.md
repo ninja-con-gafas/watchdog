@@ -19,6 +19,8 @@ A lightweight, containerized gateway for home-lab and private cloud environments
 - **Container Runtime**: Docker with Docker Compose
 - **Network Access**: Local LAN (intranet) only
 
+![Architecture](./doc/diagrams/architecture.png)
+
 This setup is designed for **headless operation** and remote administration within a secured local network, enabling clean, modular service deployment using containers.
 
 ---
