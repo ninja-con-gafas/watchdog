@@ -1,37 +1,40 @@
 """
-A Streamlit application to check Proxmox availability and optionally send Wake-on-LAN signal.
+A Streamlit application to check server availability and optionally send Wake-on-LAN signal.
 
 Parameters:
     Loaded from environment variables:
-        - PROXMOX_IP (str): Static IP address of Proxmox hypervisor host
-        - PROXMOX_MAC (str): MAC address of Proxmox hypervisor host
-        - PROXMOX_PORT (int): TCP port for Proxmox web UI
+        - SERVER_IP (str): Static IP address of server
+        - SERVER_MAC (str): MAC address of server
+        - SERVER_PORT (int): TCP port for server web UI
 Returns:
-    Streamlit UI based on Proxmox availability
+    Streamlit UI based on server availability
 
 Raises:
     Displays error messages for unreachable hosts or failed WoL attempts
 """
 
-from os import getenv
+from os import chmod, getenv
 from requests import Response, post
 from socket import create_connection, timeout as socket_timeout
-from streamlit import  button, error, expander, info, markdown, set_page_config, success, text_input, title
+from streamlit import  button, error, expander, file_uploader, info, markdown, set_page_config, success, text_input, title
+from subprocess import run, CalledProcessError
+from tempfile import gettempdir, NamedTemporaryFile
 from urllib.parse import urljoin
 from wakeonlan import send_magic_packet
 
 # Load environment variables
-PROXMOX_IP: str = getenv("PROXMOX_IP")
-PROXMOX_MAC: str = getenv("PROXMOX_MAC")
-PROXMOX_PORT: int = int(getenv("PROXMOX_PORT"))
+IS_PROXMOX: bool = getenv("IS_PROXMOX").strip().lower() in {"true"}
+SERVER_IP: str = getenv("SERVER_IP")
+SERVER_MAC: str = getenv("SERVER_MAC")
+SERVER_PORT: int = int(getenv("SERVER_PORT"))
 
-def is_proxmox_up(ip: str, port: int, timeout: float = 2.0) -> bool:
+def is_server_up(ip: str, port: int, timeout: float = 2.0) -> bool:
     """
-    Check if the Proxmox host is reachable on a specific TCP port.
+    Check if the server is reachable on a specific TCP port.
 
     Parameters:
-        ip (str): IP address of the Proxmox host to be checked.
-        port (int): TCP port number for Proxmox web UI.
+        ip (str): IP address of the server to be checked.
+        port (int): TCP port number for Server web UI.
         timeout (float, optional): Timeout in seconds for the connection attempt. Default is 2.0 seconds.
 
     Returns:
@@ -60,16 +63,50 @@ def render_header():
         None
     """
 
-    set_page_config(page_title="Proxmox Gatekeeper", page_icon="🛡️", layout="centered")
-    title("Proxmox Gatekeeper")
-    markdown("This service ensures Proxmox is up before routing traffic to it.")
+    set_page_config(page_title="Gatekeeper", page_icon="🛡️", layout="centered")
+    title("Gatekeeper")
+    markdown("This service ensures server is up before routing traffic to it.")
 
-def render_shutdown_ui(ip: str):
+def render_generic_shutdown_ui(ip: str, port: int):
+    """
+    Render the generic shutdown UI for server via SSH with key based authentication.
+
+    Parameters:
+        ip (str): IP address of the server.
+        port (int): TCP port for server web UI.
+
+    Returns:
+        None
+
+    Raises:
+        Displays error messages in UI on failure.
+    """
+
+    with expander("Shut Down Generic Server"):
+        markdown("Upload your **private SSH key** to perform a shutdown.")
+
+        ssh_key_file = file_uploader("Upload your private SSH key")
+        ssh_user: str = "gatekeeper"
+
+        if ssh_key_file and button("Send Shutdown Command"):
+            temp_dir = gettempdir()
+            with NamedTemporaryFile(mode="w", dir=temp_dir, prefix="ssh_key_", delete=True) as temp_key_file:
+                temp_key_file.write(ssh_key_file.getvalue().decode("utf-8"))
+                temp_key_file.flush()
+                chmod(temp_key_file.name, 0o600) # chmod u=rw,go= (read/write for user only)
+
+                if shutdown_linux_with_ssh(ip, ssh_user, temp_key_file.name):
+                    success("Shutdown command sent successfully!")
+                else:
+                    error("Shutdown failed. Verify that the SSH setup is correctly configured.")
+
+def render_proxmox_shutdown_ui(ip: str, port: int):
     """
     Render the shutdown UI for Proxmox via API token authentication.
 
     Parameters:
         ip (str): IP address of the Proxmox host.
+        port (int): TCP port for Proxmox API.
 
     Returns:
         None
@@ -86,21 +123,63 @@ def render_shutdown_ui(ip: str):
         token_secret: str = text_input("API Token Secret", type="password")
 
         if all([node_name, token_id, token_secret]) and button("Send Shutdown Request"):
-            if shutdown_proxmox_with_token(ip, node_name, token_id, token_secret):
+            if shutdown_proxmox_with_token(ip, port, node_name, token_id, token_secret):
                 success("Shutdown command sent successfully!")
             else:
                 error("Shutdown request failed. Check credentials and try again.")
 
-from urllib.parse import urljoin
-from requests import post, Response
-from streamlit import error
+def shutdown_linux_with_ssh(server_ip: str, username: str, key_path: str) -> bool:
+    """
+    Perform a shutdown of the server via SSH using a restricted key.
 
-def shutdown_proxmox_with_token(proxmox_ip: str, node_name: str, token_id: str, token_secret: str) -> bool:
+    Parameters:
+        server_ip (str): IP address of the server to shut down.
+        username (str): The SSH username (should be 'gatekeeper').
+        key_path (str): Path to the SSH private key.
+
+    Returns:
+        bool: True if the shutdown command succeeds, False otherwise.
+
+    Raises:
+        Displays UI error messages for SSH execution issues.
+    """
+
+    ssh_command = [
+        "ssh",
+        "-i", key_path,
+        "-o", "StrictHostKeyChecking=no",
+        "-o", "UserKnownHostsFile=/dev/null",
+        f"{username}@{server_ip}",
+        "sudo shutdown now"
+    ]
+
+    try:
+        result = run(ssh_command, capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            return True
+        else:
+            error(f"SSH error ({result.returncode}): {result.stderr.strip()}")
+            return False
+    except FileNotFoundError:
+        error("SSH command not found. Ensure OpenSSH is installed on your system.")
+        return False
+    except CalledProcessError as e:
+        error(f"SSH command failed: {e}")
+        return False
+    except socket_timeout:
+        error("Connection timed out.")
+        return False
+    except Exception as ex:
+        error(f"Unexpected error: {ex}")
+        return False
+
+def shutdown_proxmox_with_token(server_ip: str, server_port: int, node_name: str, token_id: str, token_secret: str) -> bool:
     """
     Send a shutdown request to the Proxmox host using the API token.
 
     Parameters:
-        proxmox_ip (str): IP address of the Proxmox host.
+        server_ip (str): IP address of the Proxmox host.
+        server_port (int): TCP port for Proxmox API.
         node_name (str): The name of the Proxmox node.
         token_id (str): Token identifier in the form `user@realm!tokenname`.
         token_secret (str): Token secret string.
@@ -112,7 +191,7 @@ def shutdown_proxmox_with_token(proxmox_ip: str, node_name: str, token_id: str, 
         Displays UI error messages for API call failures.
     """
 
-    url_base = f"https://{proxmox_ip}:8006/api2/json/"
+    url_base = f"https://{server_ip}:{server_port}/api2/json/"
     shutdown_url = urljoin(url_base, f"nodes/{node_name}/status")
     headers = {"Authorization": f"PVEAPIToken={token_id}={token_secret}"}
     data = {"command": "shutdown"}
@@ -128,12 +207,12 @@ def shutdown_proxmox_with_token(proxmox_ip: str, node_name: str, token_id: str, 
         error(f"Error contacting Proxmox API: {ex}")
         return False
     
-def wake_proxmox(mac: str) -> None:
+def wake_server(mac: str) -> None:
     """
-    Send a Wake-on-LAN (WoL) magic packet to the Proxmox host.
+    Send a Wake-on-LAN (WoL) magic packet to the server.
 
     Parameters:
-        mac (str): The MAC address of the Proxmox system to wake.
+        mac (str): The MAC address of the Server system to wake.
     Returns:
         None
 
@@ -147,19 +226,22 @@ def wake_proxmox(mac: str) -> None:
 def main():
     render_header()
 
-    if is_proxmox_up(PROXMOX_IP, PROXMOX_PORT):
-        success(f"Proxmox is up at {PROXMOX_IP}:{PROXMOX_PORT}")
-        render_shutdown_ui(PROXMOX_IP)
+    if is_server_up(SERVER_IP, SERVER_PORT):
+        success(f"Server is up at {SERVER_IP}:{SERVER_PORT}")
+        if IS_PROXMOX:
+            render_proxmox_shutdown_ui(SERVER_IP, SERVER_PORT)
+        else:
+           render_generic_shutdown_ui(SERVER_IP, SERVER_PORT)
     else:
-        error(f"Proxmox is currently **unavailable** at {PROXMOX_IP}:{PROXMOX_PORT}")
-        if button("Wake Proxmox"):
+        error(f"Server is currently **unavailable** at {SERVER_IP}:{SERVER_PORT}")
+        if button("Wake Server"):
             try:
-                wake_proxmox(PROXMOX_MAC)
+                wake_server(SERVER_MAC)
                 success("Wake-on-LAN signal sent successfully!")
             except Exception as e:
                 error(f"Failed to send WoL packet: {e}")
 
-        info("Refresh the page to recheck Proxmox status.")
+        info("Refresh the page to recheck Server status.")
 
 
 if __name__ == "__main__":

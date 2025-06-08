@@ -30,6 +30,13 @@ fi
 echo "Loading environment variables from .env"
 set -a
 . .env
+if [[ -z "$IS_PROXMOX" ]]; then
+  IS_PROXMOX=false
+  echo "Using default IS_PROXMOX: $IS_PROXMOX"
+  echo "If this is not correct, please set it in the .env file."
+  echo -e "\nIS_PROXMOX=\"$IS_PROXMOX\"" >> .env
+  export IS_PROXMOX
+fi
 if [[ -z "$PARENT_INTERFACE" ]]; then
   PARENT_INTERFACE="$(ip route | awk '/default/ {print $5; exit}')"
   echo "Using default PARENT_INTERFACE: $PARENT_INTERFACE"
@@ -37,17 +44,17 @@ if [[ -z "$PARENT_INTERFACE" ]]; then
   echo -e "\nPARENT_INTERFACE=\"$PARENT_INTERFACE\"" >> .env
   export PARENT_INTERFACE
 fi
-if [[ -z "$PROXMOX_PORT" ]]; then
-  PROXMOX_PORT=8006
-  echo "Using default PROXMOX_PORT: $PROXMOX_PORT"
+if [[ -z "$SERVER_PORT" ]]; then
+  SERVER_PORT=22
+  echo "Using default SERVER_PORT: $SERVER_PORT"
   echo "If this is not correct, please set it in the .env file."
-  echo -e "\nPROXMOX_PORT=\"$PROXMOX_PORT\"" >> .env
-  export PROXMOX_PORT
+  echo -e "\nSERVER_PORT=\"$SERVER_PORT\"" >> .env
+  export SERVER_PORT
 fi
 set +a
 
 # Validate required environment variables
-required_vars=(FTLCONF_dns_upstreams FTLCONF_webserver_api_password HOST_IP HOSTNAME PIHOLE_IP PIHOLE_MAC PROXMOX_IP PROXMOX_MAC TZ)
+required_vars=(FTLCONF_dns_upstreams FTLCONF_webserver_api_password HOST_IP HOSTNAME PIHOLE_IP PIHOLE_MAC SERVER_IP SERVER_MAC TZ)
 for var in "${required_vars[@]}"; do
     if [[ -z "${!var}" ]]; then
         echo "Missing required variable: $var"

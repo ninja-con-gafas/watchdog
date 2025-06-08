@@ -3,11 +3,11 @@ local health_cache = ngx.shared.healthcheck_cache
 
 local tcp = ngx.socket.tcp
 local timeout = 1000  -- in ms
-local cache_key = "proxmox_health"
+local cache_key = "server_health"
 
 -- Required env vars
-local proxmox_ip = os.getenv("PROXMOX_IP")
-local proxmox_port = tonumber(os.getenv("PROXMOX_PORT"))
+local server_ip = os.getenv("SERVER_IP")
+local server_port = tonumber(os.getenv("SERVER_PORT"))
 local gatekeeper_ip = os.getenv("HOST_IP")
 
 -- Fallback route
@@ -37,7 +37,7 @@ if not status then
     local conn = tcp()
     conn:settimeout(timeout)
 
-    local ok, connect_err = conn:connect(proxmox_ip, proxmox_port)
+    local ok, connect_err = conn:connect(server_ip, server_port)
     if ok then
         health_cache:set(cache_key, "up", 15)
         status = "up"
@@ -45,11 +45,11 @@ if not status then
     else
         health_cache:set(cache_key, "down", 15)
         status = "down"
-        ngx.log(ngx.ERR, "Proxmox health check failed: ", connect_err)
+        ngx.log(ngx.ERR, "Server health check failed: ", connect_err)
     end
 end
 
--- Check for valid service route if Proxmox is up
+-- Check for valid service route if server is up
 local host = ngx.var.host or ""
 if status == "up" and service_map[host] then
     target = "http://" .. service_map[host].target
