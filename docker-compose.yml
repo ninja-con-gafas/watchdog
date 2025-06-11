@@ -8,9 +8,9 @@ services:
         env_file:
             - ./.env
         volumes:
-            - /etc/openresty/routes.lua:/etc/openresty/routes.lua:ro
-            - /etc/openresty/services.json:/etc/openresty/services.json:ro
-            - /usr/local/openresty/nginx/conf/nginx.conf:/usr/local/openresty/nginx/conf/nginx.conf:ro
+            - ./reverse-proxy/routes.lua:/etc/openresty/routes.lua:ro
+            - ./services.json:/etc/openresty/services.json:ro
+            - ./reverse-proxy/nginx.conf:/usr/local/openresty/nginx/conf/nginx.conf:ro
         ports:
             - "80:80"
             - "443:443"
@@ -31,8 +31,8 @@ services:
             FTLCONF_webserver_api_password: "${FTLCONF_webserver_api_password}"
             TZ: "${TZ}"
         volumes:
-            - "/etc/pihole:/etc/pihole:rw"
-            - "/etc/dnsmasq.d:/etc/dnsmasq.d:rw"
+            - /etc/pihole:/etc/pihole:rw
+            - ./99-custom-dns.conf:/etc/dnsmasq.d/99-custom-dns.conf:ro
         ports:
             - "${PIHOLE_IP}:53:53/tcp"
             - "${PIHOLE_IP}:53:53/udp"
