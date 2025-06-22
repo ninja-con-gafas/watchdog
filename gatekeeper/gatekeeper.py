@@ -34,7 +34,7 @@ def is_server_up(ip: str, port: int, timeout: float = 2.0) -> bool:
 
     Parameters:
         ip (str): IP address of the server to be checked.
-        port (int): TCP port number for Server web UI.
+        port (int): TCP port number for server web UI.
         timeout (float, optional): Timeout in seconds for the connection attempt. Default is 2.0 seconds.
 
     Returns:
@@ -82,7 +82,7 @@ def render_generic_shutdown_ui(ip: str, port: int):
         Displays error messages in UI on failure.
     """
 
-    with expander("Shut Down Generic Server"):
+    with expander("Shut Down Server"):
         markdown("Upload your **private SSH key** to perform a shutdown.")
 
         ssh_key_file = file_uploader("Upload your private SSH key")
@@ -212,7 +212,7 @@ def wake_server(mac: str) -> None:
     Send a Wake-on-LAN (WoL) magic packet to the server.
 
     Parameters:
-        mac (str): The MAC address of the Server system to wake.
+        mac (str): The MAC address of the server system to wake.
     Returns:
         None
 
@@ -241,7 +241,7 @@ def main():
             except Exception as e:
                 error(f"Failed to send WoL packet: {e}")
 
-        info("Refresh the page to recheck Server status.")
+        info("Refresh the page to recheck server status.")
 
 
 if __name__ == "__main__":
