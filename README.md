@@ -115,7 +115,7 @@ The stack is containerized and can be easily deployed using Docker Compose. To d
 
    6.1. Generic Mode 
 
-   Use the [`setup-linux-host.sh`](target/setup-linux-host.sh) script to configure a standard Linux host with SSH-based remote shutdown support.
+   Use the applicable [`targer script`](target/) to configure a Linux host with SSH-based remote shutdown support.
 
    - Transfer the setup script to the target machine.
    - Execute the script as root.

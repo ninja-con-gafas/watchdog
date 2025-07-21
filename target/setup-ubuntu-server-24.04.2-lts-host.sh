@@ -39,6 +39,7 @@ fi
 
 echo "[2/4] Reading SSH public key for command-restricted access"
 read -rp "Paste the public SSH key to authorise for shutdown-only access: " SSH_KEY
+SSH_KEY="$(echo "${SSH_KEY}" | tr -d '\r\n')"
 
 # Sanity check for public key format
 if ! echo "${SSH_KEY}" | grep -qE '^ssh-(rsa|ed25519|ecdsa) '; then
@@ -47,9 +48,9 @@ fi
 
 echo "[3/4] Configuring SSH authorized_keys with command restriction"
 mkdir -p "${AUTHORIZED_KEYS_DIR}"
-chmod u=rwx "${AUTHORIZED_KEYS_DIR}"
+chmod u=rwx,go= "${AUTHORIZED_KEYS_DIR}"
 touch "${AUTHORIZED_KEYS_FILE}"
-chmod u=rw "${AUTHORIZED_KEYS_FILE}"
+chmod u=rw,go= "${AUTHORIZED_KEYS_FILE}"
 chown -R "${USERNAME}:${USERNAME}" "${AUTHORIZED_KEYS_DIR}"
 
 RESTRICTED_KEY="command=\"sudo /sbin/shutdown now\",no-pty,no-agent-forwarding,no-X11-forwarding ${SSH_KEY}"
