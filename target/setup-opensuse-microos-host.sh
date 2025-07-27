@@ -40,7 +40,6 @@ if ! echo "${SSH_KEY}" | grep -qE '^ssh-(rsa|ed25519|ecdsa) '; then
   abort "Invalid SSH public key format."
 fi
 
-transactional-update run bash -eux <<EOT
 echo "[2/4] Checking if user '${USERNAME}' exists"
 if ! id "${USERNAME}" &>/dev/null; then
   echo "Creating system user '${USERNAME}'"
@@ -64,6 +63,7 @@ else
   echo "SSH key already configured."
 fi
 
+transactional-update run bash -eux <<EOT
 echo "[4/4] Configuring sudoers for passwordless shutdown"
 echo "${USERNAME} ALL=(ALL) NOPASSWD: /sbin/shutdown" > "${SUDOERS_FILE}"
 chmod u=rw,g=r,o= "${SUDOERS_FILE}"
