@@ -15,23 +15,26 @@ services:
             - "80:80"
             - "443:443"
         networks:
-            - watchdog_network
+            - watchdog-network
         depends_on:
             - pihole
             - gatekeeper
 
     pihole:
-        image: pihole/pihole:2025.04.0
+        image: pihole/pihole:latest
         container_name: pihole
         hostname: "${HOSTNAME}"
         restart: unless-stopped
+        cap_add:
+            - SYS_NICE
+            - SYS_TIME
         environment:
             FTLCONF_dns_upstreams: "${FTLCONF_dns_upstreams}"
             FTLCONF_misc_etc_dnsmasq_d: True
             FTLCONF_webserver_api_password: "${FTLCONF_webserver_api_password}"
             TZ: "${TZ}"
         volumes:
-            - /etc/pihole:/etc/pihole:rw
+            - pihole-data:/etc/pihole
             - ./99-custom-dns.conf:/etc/dnsmasq.d/99-custom-dns.conf:ro
         ports:
             - "${PIHOLE_IP}:53:53/tcp"
@@ -39,7 +42,7 @@ services:
             - "${PIHOLE_IP}:80:80/tcp"
             - "${PIHOLE_IP}:443:443/tcp"
         networks:
-            pihole_network:
+            pihole-network:
                 mac_address: "${PIHOLE_MAC}"
                 ipv4_address: "${PIHOLE_IP}"
 
@@ -53,9 +56,13 @@ services:
         depends_on:
             - pihole
 
+volumes:
+    pihole-data:
+        name: pihole-data
+
 networks:
-    pihole_network:
-        name: pihole_network
+    pihole-network:
+        name: pihole-network
         driver: macvlan
         driver_opts:
           parent: "${PARENT_INTERFACE}"
@@ -64,6 +71,6 @@ networks:
             - subnet: 192.168.1.0/24
               gateway: 192.168.1.1
 
-    watchdog_network:
-        name: watchdog_network
+    watchdog-network:
+        name: watchdog-network
         driver: bridge
