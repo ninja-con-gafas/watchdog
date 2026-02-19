@@ -1,6 +1,17 @@
-version: "3.8"
-
 services:
+    gatekeeper:
+        build:
+            context: ./gatekeeper
+            dockerfile: containerfile
+        container_name: gatekeeper
+        restart: unless-stopped
+        env_file:
+            - ./.env
+        network_mode: service:tailscale
+        depends_on:
+            - pihole
+            - tailscale
+
     openresty:
         image: openresty/openresty:1.21.4.1-0-alpine
         container_name: openresty
@@ -11,66 +22,50 @@ services:
             - ./reverse-proxy/routes.lua:/etc/openresty/routes.lua:ro
             - ./services.json:/etc/openresty/services.json:ro
             - ./reverse-proxy/nginx.conf:/usr/local/openresty/nginx/conf/nginx.conf:ro
-        ports:
-            - "80:80"
-            - "443:443"
-        networks:
-            - watchdog-network
+        network_mode: service:tailscale
         depends_on:
-            - pihole
             - gatekeeper
 
     pihole:
         image: pihole/pihole:latest
         container_name: pihole
-        hostname: "${HOSTNAME}"
         restart: unless-stopped
+        network_mode: service:tailscale
         cap_add:
+            - NET_ADMIN
             - SYS_NICE
             - SYS_TIME
         environment:
+            DNSMASQ_LISTENING: all
+            FTLCONF_dns_listeningMode: ALL
             FTLCONF_dns_upstreams: "${FTLCONF_dns_upstreams}"
             FTLCONF_misc_etc_dnsmasq_d: True
             FTLCONF_webserver_api_password: "${FTLCONF_webserver_api_password}"
+            FTLCONF_webserver_port: "8080o,[::]:8080o"
             TZ: "${TZ}"
         volumes:
-            - pihole-data:/etc/pihole
+            - pihole:/etc/pihole
             - ./99-custom-dns.conf:/etc/dnsmasq.d/99-custom-dns.conf:ro
-        ports:
-            - "${PIHOLE_IP}:53:53/tcp"
-            - "${PIHOLE_IP}:53:53/udp"
-            - "${PIHOLE_IP}:80:80/tcp"
-            - "${PIHOLE_IP}:443:443/tcp"
-        networks:
-            pihole-network:
-                mac_address: "${PIHOLE_MAC}"
-                ipv4_address: "${PIHOLE_IP}"
 
-    gatekeeper:
-        build: ./gatekeeper
-        container_name: gatekeeper
+    tailscale:
+        image: tailscale/tailscale:latest
+        container_name: tailscale
+        hostname: "${HOSTNAME}"
         restart: unless-stopped
-        env_file:
-            - ./.env
-        network_mode: "host"
-        depends_on:
-            - pihole
+        environment:
+            TS_AUTHKEY: ${TS_AUTHKEY}
+            TS_STATE_DIR: /var/lib/tailscale
+            TS_USERSPACE: False
+        volumes:
+        - tailscale:/var/lib/tailscale
+        - /dev/net/tun:/dev/net/tun
+        cap_add:
+            - NET_ADMIN
+            - NET_RAW
+            - SYS_MODULE
 
 volumes:
-    pihole-data:
-        name: pihole-data
-
-networks:
-    pihole-network:
-        name: pihole-network
-        driver: macvlan
-        driver_opts:
-          parent: "${PARENT_INTERFACE}"
-        ipam:
-          config:
-            - subnet: 192.168.1.0/24
-              gateway: 192.168.1.1
-
-    watchdog-network:
-        name: watchdog-network
-        driver: bridge
+    pihole:
+        name: pihole
+    tailscale:
+        name: tailscale
