@@ -63,9 +63,24 @@ services:
             - NET_ADMIN
             - NET_RAW
             - SYS_MODULE
+        networks:
+            watchdog:
+                mac_address: "${PIHOLE_MAC}"
+                ipv4_address: "${PIHOLE_IP}"
 
 volumes:
     pihole:
         name: pihole
     tailscale:
         name: tailscale
+
+networks:
+    watchdog:
+        name: watchdog
+        driver: macvlan
+        driver_opts:
+          parent: "${HOST_PARENT_INTERFACE}"
+        ipam:
+          config:
+            - subnet: 192.168.1.0/24
+              gateway: 192.168.1.1
