@@ -11,10 +11,6 @@ A lightweight, containerised gateway designed for private cloud environments. It
 
 ## System Architecture Overview
 
-- **Host Hardware**: Raspberry Pi 3B+ or any compatible hardware
-- **Container Runtime**: Docker with Docker Compose
-- **Network Access**: Local LAN (intranet) only
-
 The system operates in **headless mode**, with access restricted exclusively to Tailscale clients.
 
 ![Architecture](./doc/diagrams/architecture_v2.png)
@@ -32,6 +28,7 @@ The system operates in **headless mode**, with access restricted exclusively to 
 | Remote Shutdown             | SSH with key or API with token authenticated     | Raspberry Pi   |
 | Secure Networking           | Tailscale                                        | Raspberry Pi   |
 
+> _For more details refer [System Architecture Document](doc/architecture.md)_
 
 ## Supported Modes
 
