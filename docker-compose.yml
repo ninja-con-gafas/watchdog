@@ -39,7 +39,7 @@ services:
             DNSMASQ_LISTENING: all
             FTLCONF_dns_listeningMode: ALL
             FTLCONF_dns_upstreams: "${FTLCONF_dns_upstreams}"
-            FTLCONF_misc_etc_dnsmasq_d: True
+            FTLCONF_misc_etc_dnsmasq_d: true
             FTLCONF_webserver_api_password: "${FTLCONF_webserver_api_password}"
             FTLCONF_webserver_port: "8080o,[::]:8080o"
             TZ: "${TZ}"
@@ -55,7 +55,7 @@ services:
         environment:
             TS_AUTHKEY: ${TS_AUTHKEY}
             TS_STATE_DIR: /var/lib/tailscale
-            TS_USERSPACE: False
+            TS_USERSPACE: false
         volumes:
         - tailscale:/var/lib/tailscale
         - /dev/net/tun:/dev/net/tun
@@ -65,8 +65,8 @@ services:
             - SYS_MODULE
         networks:
             watchdog:
-                mac_address: "${PIHOLE_MAC}"
-                ipv4_address: "${PIHOLE_IP}"
+                mac_address: "${WATCHDOG_MAC}"
+                ipv4_address: "${WATCHDOG_IP}"
 
 volumes:
     pihole:
