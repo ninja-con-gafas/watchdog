@@ -2,11 +2,13 @@ services:
     gatekeeper:
         build:
             context: ./gatekeeper
-            dockerfile: containerfile
+            dockerfile: Dockerfile
         container_name: gatekeeper
         restart: unless-stopped
         env_file:
             - ./.env
+        volumes:
+            - ./services.json:/etc/openresty/services.json:ro
         network_mode: service:tailscale
         depends_on:
             - pihole
@@ -57,8 +59,8 @@ services:
             TS_STATE_DIR: /var/lib/tailscale
             TS_USERSPACE: false
         volumes:
-        - tailscale:/var/lib/tailscale
-        - /dev/net/tun:/dev/net/tun
+            - tailscale:/var/lib/tailscale
+            - /dev/net/tun:/dev/net/tun
         cap_add:
             - NET_ADMIN
             - NET_RAW
@@ -79,8 +81,8 @@ networks:
         name: watchdog
         driver: macvlan
         driver_opts:
-          parent: "${HOST_PARENT_INTERFACE}"
+            parent: "${HOST_PARENT_INTERFACE}"
         ipam:
-          config:
-            - subnet: 192.168.1.0/24
-              gateway: 192.168.1.1
+            config:
+                - subnet: 192.168.1.0/24
+                  gateway: 192.168.1.1

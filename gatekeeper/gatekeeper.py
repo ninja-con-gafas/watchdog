@@ -1,32 +1,45 @@
-"""
-A Streamlit application to check server availability and optionally send Wake-on-LAN signal.
+"""Streamlit interface for power orchestration and server reachability management across multi-node fleets."""
 
-Parameters:
-    Loaded from environment variables:
-        - SERVER_IP (str): Static IP address of server
-        - SERVER_MAC (str): MAC address of server
-        - SERVER_PORT (int): TCP port for server web UI
-Returns:
-    Streamlit UI based on server availability
-
-Raises:
-    Displays error messages for unreachable hosts or failed WoL attempts
-"""
-
-from os import chmod, getenv
+import json
+from os import chmod
+from pathlib import Path
 from requests import Response, post
+from streamlit import  button, error, expander, file_uploader, info, markdown, query_params, set_page_config, success, text_input, title, write
 from socket import create_connection, timeout as socket_timeout
-from streamlit import  button, error, expander, file_uploader, info, markdown, set_page_config, success, text_input, title
-from subprocess import run, CalledProcessError
-from tempfile import gettempdir, NamedTemporaryFile
+from subprocess import CalledProcessError, run
+from tempfile import NamedTemporaryFile, gettempdir
+from typing import Any, Dict, Optional
 from urllib.parse import urljoin
 from wakeonlan import send_magic_packet
 
-# Load environment variables
-IS_PROXMOX: bool = getenv("IS_PROXMOX").strip().lower() in {"true"}
-SERVER_IP: str = getenv("SERVER_IP")
-SERVER_MAC: str = getenv("SERVER_MAC")
-SERVER_PORT: int = int(getenv("SERVER_PORT"))
+CONFIGURATION_FILE_PATH: Path = Path("/etc/openresty/services.json")
+DEFAULT_SOCKET_TIMEOUT_SECONDS: float = 2.0
+SSH_EXECUTION_TIMEOUT_SECONDS: int = 5
+HTTP_REQUEST_TIMEOUT_SECONDS: int = 5
+PERMISSIONS_USER_READ_WRITE: int = 0o600
+
+
+def load_services_configuration(file_path: Path) -> Dict[str, Any]:
+	"""
+	Load and parse the centralized JSON configuration file for nodes and routes.
+
+	Parameters
+		file_path (Path): File path pointing to the services JSON configuration file.
+
+	Returns
+		Dict[str, Any]: Dictionary containing 'nodes' and 'routes' mappings.
+
+	Raises
+		FileNotFoundError: If the specified configuration file does not exist.
+		ValueError: If the file contents cannot be parsed as valid JSON.
+	"""
+	if not file_path.exists():
+		raise FileNotFoundError(f"Configuration file does not exist at path: {file_path}")
+
+	with open(file_path, mode="r", encoding="utf-8") as file_stream:
+		configuration_data: Dict[str, Any] = json.load(file_stream)
+		return configuration_data
+
 
 def is_server_up(ip: str, port: int, timeout: float = 2.0) -> bool:
     """
@@ -52,81 +65,6 @@ def is_server_up(ip: str, port: int, timeout: float = 2.0) -> bool:
     except (socket_timeout, ConnectionRefusedError, OSError):
         return False
 
-def render_header():
-    """
-    Render the standard header for the Streamlit UI. Modifies the Streamlit page layout and inserts a title and description.
-
-    Parameters:
-        None
-
-    Returns:
-        None
-    """
-
-    set_page_config(page_title="Gatekeeper", page_icon="🛡️", layout="centered")
-    title("Gatekeeper")
-    markdown("This service ensures server is up before routing traffic to it.")
-
-def render_generic_shutdown_ui(ip: str, port: int):
-    """
-    Render the generic shutdown UI for server via SSH with key based authentication.
-
-    Parameters:
-        ip (str): IP address of the server.
-        port (int): TCP port for server web UI.
-
-    Returns:
-        None
-
-    Raises:
-        Displays error messages in UI on failure.
-    """
-
-    with expander("Shut Down Server"):
-        markdown("Upload your **private SSH key** to perform a shutdown.")
-
-        ssh_key_file = file_uploader("Upload your private SSH key")
-        ssh_user: str = "gatekeeper"
-
-        if ssh_key_file and button("Send Shutdown Command"):
-            temp_dir = gettempdir()
-            with NamedTemporaryFile(mode="w", dir=temp_dir, prefix="ssh_key_", delete=True) as temp_key_file:
-                temp_key_file.write(ssh_key_file.getvalue().decode("utf-8"))
-                temp_key_file.flush()
-                chmod(temp_key_file.name, 0o600) # chmod u=rw,go= (read/write for user only)
-
-                if shutdown_linux_with_ssh(ip, ssh_user, temp_key_file.name):
-                    success("Shutdown command sent successfully!")
-                else:
-                    error("Shutdown failed. Verify that the SSH setup is correctly configured.")
-
-def render_proxmox_shutdown_ui(ip: str, port: int):
-    """
-    Render the shutdown UI for Proxmox via API token authentication.
-
-    Parameters:
-        ip (str): IP address of the Proxmox host.
-        port (int): TCP port for Proxmox API.
-
-    Returns:
-        None
-
-    Raises:
-        Displays error messages in UI on failure.
-    """
-
-    with expander("Shut Down Proxmox"):
-        markdown("Enter your **Proxmox API token credentials** to perform a shutdown.")
-
-        node_name: str = text_input("Node Name")
-        token_id: str = text_input("API Token ID in the form `user@realm!tokenname`")
-        token_secret: str = text_input("API Token Secret", type="password")
-
-        if all([node_name, token_id, token_secret]) and button("Send Shutdown Request"):
-            if shutdown_proxmox_with_token(ip, port, node_name, token_id, token_secret):
-                success("Shutdown command sent successfully!")
-            else:
-                error("Shutdown request failed. Check credentials and try again.")
 
 def shutdown_linux_with_ssh(server_ip: str, username: str, key_path: str) -> bool:
     """
@@ -173,6 +111,7 @@ def shutdown_linux_with_ssh(server_ip: str, username: str, key_path: str) -> boo
         error(f"Unexpected error: {ex}")
         return False
 
+
 def shutdown_proxmox_with_token(server_ip: str, server_port: int, node_name: str, token_id: str, token_secret: str) -> bool:
     """
     Send a shutdown request to the Proxmox host using the API token.
@@ -206,7 +145,8 @@ def shutdown_proxmox_with_token(server_ip: str, server_port: int, node_name: str
     except Exception as ex:
         error(f"Error contacting Proxmox API: {ex}")
         return False
-    
+
+
 def wake_server(mac: str) -> None:
     """
     Send a Wake-on-LAN (WoL) magic packet to the server.
@@ -223,26 +163,133 @@ def wake_server(mac: str) -> None:
 
     send_magic_packet(mac)
 
-def main():
-    render_header()
 
-    if is_server_up(SERVER_IP, SERVER_PORT):
-        success(f"Server is up at {SERVER_IP}:{SERVER_PORT}")
-        if IS_PROXMOX:
-            render_proxmox_shutdown_ui(SERVER_IP, SERVER_PORT)
-        else:
-           render_generic_shutdown_ui(SERVER_IP, SERVER_PORT)
-    else:
-        error(f"Server is currently **unavailable** at {SERVER_IP}:{SERVER_PORT}")
-        if button("Wake Server"):
-            try:
-                wake_server(SERVER_MAC)
-                success("Wake-on-LAN signal sent successfully!")
-            except Exception as e:
-                error(f"Failed to send WoL packet: {e}")
+def render_linux_shutdown_ui(server_ip: str) -> None:
+	"""
+	Render UI components for SSH key upload and Linux shutdown command execution.
 
-        info("Refresh the page to recheck server status.")
+	Parameters
+		server_ip (str): IP address of target Linux machine.
+
+	Returns
+		None
+	"""
+	with expander("Shut Down Server"):
+		markdown("Upload your **private SSH key** to perform a shutdown.")
+		ssh_key_file = file_uploader("Upload private SSH key")
+		ssh_username: str = "gatekeeper"
+
+		if ssh_key_file and button("Send Shutdown Command"):
+			temporary_directory: str = gettempdir()
+			with NamedTemporaryFile(
+				mode="w",
+				dir=temporary_directory,
+				prefix="ssh_key_",
+				delete=True,
+			) as key_file:
+				key_file.write(ssh_key_file.getvalue().decode("utf-8"))
+				key_file.flush()
+				chmod(key_file.name, PERMISSIONS_USER_READ_WRITE)
+
+				if shutdown_linux_with_ssh(server_ip, ssh_username, key_file.name):
+					success("Shutdown command executed successfully.")
+				else:
+					error("Shutdown failed. Verify SSH configuration.")
+
+
+def render_proxmox_shutdown_ui(ip: str, port: int):
+    """
+    Render the shutdown UI for Proxmox via API token authentication.
+
+    Parameters:
+        ip (str): IP address of the Proxmox host.
+        port (int): TCP port for Proxmox API.
+
+    Returns:
+        None
+
+    Raises:
+        Displays error messages in UI on failure.
+    """
+
+    with expander("Shut Down Proxmox"):
+        markdown("Enter your **Proxmox API token credentials** to perform a shutdown.")
+
+        node_name: str = text_input("Node Name")
+        token_id: str = text_input("API Token ID in the form `user@realm!tokenname`")
+        token_secret: str = text_input("API Token Secret", type="password")
+
+        if all([node_name, token_id, token_secret]) and button("Send Shutdown Request"):
+            if shutdown_proxmox_with_token(ip, port, node_name, token_id, token_secret):
+                success("Shutdown command sent successfully!")
+            else:
+                error("Shutdown request failed. Check credentials and try again.")
+
+
+
+def render_fleet_dashboard(node_records: Dict[str, Any]) -> None:
+	"""
+	Render fallback fleet dashboard listing all configured nodes and their basic metadata.
+
+	Parameters
+		node_records (Dict[str, Any]): Dictionary of node definitions from services configuration.
+
+	Returns
+		None
+	"""
+	set_page_config(page_title="Gatekeeper", page_icon="🛡️", layout="centered")
+	title("Gatekeeper")
+	markdown("This service ensures server is up before routing traffic to it.")
+
+def main() -> None:
+	"""
+	Main application entry point for Streamlit UI execution. Parses node context and renders state controls.
+
+	Returns
+		None
+	"""
+	try:
+		configuration_data: Dict[str, Any] = load_services_configuration(CONFIGURATION_FILE_PATH)
+	except (FileNotFoundError, ValueError) as configuration_error:
+		error(f"Configuration failure: {configuration_error}")
+		return
+
+	nodes_dictionary: Dict[str, Any] = configuration_data.get("nodes", {})
+	query_parameters: Dict[str, Any] = query_params
+	target_node_key: Optional[str] = query_parameters.get("node")
+
+	if not target_node_key or target_node_key not in nodes_dictionary:
+		render_fleet_dashboard(nodes_dictionary)
+		return
+
+	selected_node: Dict[str, Any] = nodes_dictionary[target_node_key]
+	ip_address: str = str(selected_node.get("ip", ""))
+	mac_address: str = str(selected_node.get("mac", ""))
+	health_port: int = int(selected_node.get("health_port", 80))
+	node_type: str = str(selected_node.get("type", "linux")).lower()
+
+	set_page_config(page_title=f"Gatekeeper: {target_node_key}", page_icon="🛡️")
+	title(f"Gatekeeper: {target_node_key}")
+
+	if is_server_up(ip_address, health_port, DEFAULT_SOCKET_TIMEOUT_SECONDS):
+		success(f"Node **{target_node_key}** ({ip_address}) is **ONLINE**.")
+		if node_type == "proxmox":
+			render_proxmox_shutdown_ui(ip_address, health_port)
+		elif node_type == "linux":
+			render_linux_shutdown_ui(ip_address)
+		elif node_type == "windows":
+			info("Windows host active. Please manage shutdown via RDP or VNC.")
+	else:
+		error(f"Node **{target_node_key}** ({ip_address}) is **OFFLINE**.")
+		if button("Wake Server"):
+			try:
+				wake_server(mac_address)
+				success("Wake-on-LAN magic packet transmitted successfully.")
+			except Exception as wake_error:
+				error(f"Failed to transmit WoL packet: {wake_error}")
+
+		info("Refresh the page to recheck server status.")
 
 
 if __name__ == "__main__":
-    main()
+	main()

@@ -1,17 +1,17 @@
-# Watchdog: Secure Tailscale Gateway for Private Cloud
+# Watchdog: Secure Tailscale Gateway for Private Cloud Fleet
 
-A lightweight, containerised gateway designed for private cloud environments. It deploys reliably on single-board computers, such as the Raspberry Pi 3B+, and provides secure Tailscale networking, split DNS resolution via Pi-hole, conditional reverse proxy routing with OpenResty, and remote power orchestration capabilities.
+A lightweight, containerised gateway designed for private cloud environments. It deploys reliably on single-board computers, such as the Raspberry Pi 3B+, providing secure Tailscale networking, split DNS resolution via Pi-hole, dynamic multi-node reverse proxy routing with OpenResty, and central power orchestration capabilities for heterogenous node fleets.
 
 ## Features
 - **Secure Tailscale networking**: Provides a unified service namespace with integrated networking, enabling zero configuration remote access while preventing direct exposure to the local area network.
-- **Dynamic reverse proxy**: Requests are routed based on service availability using OpenResty (Nginx + Lua).
-- **DNS resolution**: Pi-hole resolves local service domains, serves Tailscale tailnet queries and blocks advertisements and telemetry across both networks.
-- **Remote power control**: Supports Wake-on-LAN broadcasts and secure shutdown via SSH or API.
-- **Containerised deployment**: Services are delivered as Docker containers for simplified maintenance.
+- **Dynamic multi-node reverse proxy**: Probes target server reachability and dynamically routes client traffic based on service availability using OpenResty (Nginx + Lua).
+- **DNS resolution**: Pi-hole resolves local service domains, serves Tailscale tailnet queries, and blocks advertisements across both networks.
+- **Multi-target power control**: Supports Wake-on-LAN broadcasts and remote shutdown mechanisms tailored by target system type.
+- **Containerised deployment**: Delivers services as Docker containers for streamlined operation.
 
 ## System Architecture Overview
 
-The system operates in **headless mode**, with access restricted exclusively to Tailscale clients.
+The system operates in **headless mode**, with ingress restricted exclusively to authenticated Tailscale clients.
 
 ![Architecture](./doc/diagrams/architecture.png)
 
@@ -19,54 +19,50 @@ The system operates in **headless mode**, with access restricted exclusively to 
 
 | Functionality               | Tool and Technology                              | Hosted On      |
 |-----------------------------|--------------------------------------------------|----------------|
-| Operating System            | Ubuntu Core 20                                   | Raspberry Pi   |
+| Operating System            | Ubuntu Core                                      | Raspberry Pi   |
 | Conditional Routing         | OpenResty (Nginx + Lua)                          | Raspberry Pi   |
 | DNS Resolver                | Pi-hole                                          | Raspberry Pi   |
-| Power Orchestration         | Wake-on-LAN, SSH or TCP Port Check & Streamlit   | Raspberry Pi   |
-| Remote Shutdown             | SSH with key or API with token authenticated     | Raspberry Pi   |
+| Power Orchestration         | Wake-on-LAN, SSH, Proxmox API, Streamlit         | Raspberry Pi   |
 | Secure Networking           | Tailscale                                        | Raspberry Pi   |
 
-> _For more details refer [System Architecture Document](doc/architecture.md)_
+> _For more details refer to the [System Architecture Document](doc/architecture.md)_
 
-## Supported Modes
+## Supported Target Modes
 
-Watchdog supports two distinct modes of operation for power orchestration and remote shutdown:
+Watchdog supports power orchestration across three distinct node types configured in `services.json`:
 
-### 1. Linux Distribution Mode
-Designed for any standard Linux server or desktop.
-- **Wake-on-LAN**: Uses MAC address to wake any compatible server.
-- **Remote Shutdown**: Uses SSH (with key authentication) to securely shut down any Linux server.
-- **Requirements**:
-   - Server must support Wake-on-LAN and be configured for it.
-   - SSH access with appropriate privileges for issuing a `shutdown` command.
-- **Supported Distributions:**
+### 1. Linux Distribution Mode (`"type": "linux"`)
+Designed for generic Linux servers.
+- **Wake-on-LAN**: Transmits magic packets to wake offline nodes.
+- **Remote Shutdown**: Uses SSH with key-based authentication and restricted command privileges to execute `/sbin/shutdown now`.
+- **Onboarding Scripts:**
    - [openSUSE MicroOS](target/setup-opensuse-microos-host.sh)
    - [Ubuntu Server 24.04.2 LTS](target/setup-ubuntu-server-24.04.2-lts-host.sh)
 
-### 2. Proxmox Mode (Proxmox VE Integration)
-Optimised for managing Proxmox Virtual Environment (VE) hosts.
-- **Wake-on-LAN**: Same as generic mode.
-- **Remote Shutdown**: Uses the Proxmox API with a dedicated API token for secure, granular power management.
-- **Requirements**: 
-   - A dedicated Proxmox API token with the `Sys.PowerMgmt` privilege.
-   - No need for direct SSH access to the host.
-Use the IS_PROXMOX=true setting in your .env file to enable this mode.
+### 2. Proxmox VE Mode (`"type": "proxmox"`)
+Optimised for Proxmox Virtual Environment hypervisor nodes.
+- **Wake-on-LAN**: Transmits magic packets to wake offline hypervisor nodes.
+- **Remote Shutdown**: Issues HTTPS API calls authenticated via Proxmox API tokens requiring `Sys.PowerMgmt` privileges.
+- **Onboarding Script:**
+   - [Proxmox VE 8.3-1](target/setup-proxmox-proxmox-ve-8.3-1-host.sh)
+
+### 3. Windows 11 Pro Mode (`"type": "windows"`)
+Integrated for workstations and non-server Windows hosts.
+- **Wake-on-LAN**: Transmits magic packets to wake offline machines.
+- **Remote Shutdown**: Displays session status notice instructing users to execute manual shutdowns directly over native protocols (RDP, VNC).
 
 ## How It Works
-- **DNS**: Pi-hole resolves DNS queries for both, LAN domains (using direct IPs) and Tailscale tailnet resources (using tailnet IPs) through split configuration and custom records.
-- **Reverse Proxy**: OpenResty uses Lua to check if the server is up:
-  - If **up**: Requests are forwarded to the server or mapped services.
-  - If **down**: Requests are routed to the Gatekeeper for status and Wake-on-LAN.
-- **Wake-on-LAN**: Gatekeeper lets you wake the server if it is offline.
-- **Remote Shutdown**:
-  - **Generic**: Uses SSH with key authentication.
-  - **Proxmox**: Uses Proxmox API with token authentication.
+- **DNS Resolution**: Pi-hole intercepts DNS queries for custom tailnet service domains and resolves them to Watchdog's Tailscale IP (`HOST_IP`).
+- **Reverse Proxy Probe**: OpenResty executes Lua TCP probes against the target health port defined in `services.json`:
+  - If **UP**: Directly forwards request traffic to the backend endpoint.
+  - If **DOWN**: Redirects client browser to Gatekeeper attached with the target node context (`http://<HOST_IP>:8501/?node=<NODE_KEY>`).
+- **Gatekeeper UI**: Context-aware Streamlit interface rendering node status, Wake-on-LAN triggers, and specific remote shutdown panels based on node type (`linux`, `proxmox`, `windows`).
 
 ## Getting Started
 
-> **_Deployment requires a two-phase process. The HOST_IP (Tailscale IP of the Watchdog) is assigned only after successful Tailscale container authentication and is unavailable initially. Phase 1 uses placeholders to retrieve it; Phase 2 applies full configuration._**
+> **_Deployment requires a two-phase process. The HOST_IP (Tailscale IP of Watchdog) is assigned after Tailscale container authentication and is unavailable initially. Phase 1 acquires the IP; Phase 2 applies complete network routing._**
 
-> _Docker and Docker Compose must be installed on the host prior to deployment._
+> _Docker and Docker Compose must be installed prior to deployment._
 
 ### Phase 1: Initial Deployment (Acquire Tailscale IP)
 
@@ -74,93 +70,97 @@ Use the IS_PROXMOX=true setting in your .env file to enable this mode.
 
 2. Create a `.env` file in the root directory:
     ```bash
-    FTLCONF_dns_upstreams="" # DNS servers used by Pi-hole for upstream resolution (semicolon separated)
-    FTLCONF_webserver_api_password="" # Password for accessing the Pi-hole admin web interface
-    HOST_IP="placeholder" # Tailscale IP address of the Raspberry Pi 3B+ host
-    HOSTNAME="" # Hostname for the Tailscale container
-    HOST_PARENT_INTERFACE="" # Host network interface, run command on the host to find the value `ip route | grep default | awk '{print $5}'`
-    SERVER_IP="" # Tailscale IP address of server
-    SERVER_MAC="" # MAC address of server
-    SERVER_PORT="" # Port of server
-    IS_PROXMOX="" # Set to `true` if the server is a Proxmox host, `false` otherwise
-    TS_AUTHKEY="" # Tailscale authentication key. Generate from `https://login.tailscale.com/admin/settings/keys`
-    TZ="" # Your Timezone
-    WATCHDOG_IP="" # Local IP address for the Watchdog container
-    WATCHDOG_MAC="" # MAC address for the Watchdog container
+    FTLCONF_dns_upstreams="1.1.1.1;8.8.8.8" # Upstream DNS servers used by Pi-hole
+    FTLCONF_webserver_api_password="" # Password for Pi-hole web interface
+
+    HOST_IP="placeholder" # Tailscale IP address of Watchdog host
+    HOSTNAME="watchdog-gateway" # Hostname for Tailscale container
+    HOST_PARENT_INTERFACE="" # Physical network interface (e.g. eth0)
+
+    TS_AUTHKEY="" # Tailscale authentication key
+
+    TZ="Asia/Kolkata" # System Timezone
+    WATCHDOG_IP="" # Macvlan IP address for Watchdog container
+    WATCHDOG_MAC="" # Macvlan MAC address for Watchdog container
     ```
-3. Create a placeholder for `99-custom-dns.conf` and `services.json` files.
 
-4. Execute `docker compose up -d` to launch the stack.
+3. Create initial placeholder configuration files for `99-custom-dns.conf` and `services.json`.
 
-5. Approve device in [Tailscale admin console](https://login.tailscale.com/admin/machines) and note the Tailscale IP of the Watchdog.
+4. Launch the initial stack:
+    ```bash
+    sudo docker compose up -d
+    ```
+
+5. Approve the device in the [Tailscale Admin Console](https://login.tailscale.com/admin/machines) and record Watchdog's assigned Tailscale IP address.
 
 ### Phase 2: Full Configuration and Redeployment
 
-1. Update the `HOST_IP` element in `.env` file.
+1. Update the `HOST_IP` value in `.env` with the assigned Tailscale IP address.
 
-2. Update the `99-custom-dns.conf` file with custom DNS records:
-    - Each entry should be on a new line and the DNS records should be in the given format 
-      ```conf
-      address=/<SERVICE_DOMAIN_NAME>/<HOST_IP>
-      ```
-4. Update the `services.json` file with services for conditional routing:
-    - The file should be a valid JSON object where each key is a service hostname and the value is an object defining the target address.
-      ```json
-      {
-         "SERVICE_DOMAIN_NAME": {"target": "<SERVER_IP>:<PORT>"},
-         ...
+2. Update `99-custom-dns.conf` with custom DNS entries mapping domain names to `HOST_IP`:
+    ```conf
+    address=/<SERVICE_DOMAIN_NAME>/<HOST_IP>
+    ```
+
+3. Configure `services.json` with hardware node definitions and domain routes:
+    ```json
+    {
+      "nodes": {
+        "server-1": {
+          "ip": "100.121.251.124",
+          "mac": "AA:BB:CC:DD:EE:01",
+          "health_port": 9090,
+          "type": "linux"
+        },
+        "server-2": {
+          "ip": "100.121.251.125",
+          "mac": "AA:BB:CC:DD:EE:02",
+          "health_port": 3389,
+          "type": "windows"
+        }
+      },
+      "routes": {
+        "cockpit.server-1": {
+          "target": "100.121.251.124:9090",
+          "node": "server-1"
+        },
+        "desktop.server-2": {
+          "target": "100.121.251.125:3389",
+          "node": "server-2"
+        }
       }
-      ```
-    - The keys must match the exact hostname used in requests.
-    - The `target` value specifies the backend IP and port for that service.
+    }
+    ```
 
-5. Run `docker compose down && docker compose up -d`.
+4. Rebuild and restart the container stack:
+    ```bash
+    sudo docker compose down && sudo docker compose up -d --build
+    ```
 
-6. In the Tailscale admin console, configure the Pi-hole Tailscale IP as the nameserver with "Override local DNS" enabled. [Click for details](#pi-hole-split-dns-configuration).
+5. In the Tailscale Admin Console, set Pi-hole's Tailscale IP as the custom nameserver with "Override local DNS" enabled.
 
-## Setting Up The Targets
+## Setting Up Target Nodes
 
-1. Linux Distribution Mode
+1. **Linux Distribution Mode**:
+   - Transfer setup script (`setup-ubuntu-server-24.04.2-lts-host.sh` or `setup-opensuse-microos-host.sh`) to target server.
+   - Run script as root and paste public SSH key when prompted.
+   - Configures `gatekeeper` system user, command-restricted `authorized_keys`, and passwordless `/sbin/shutdown` sudoers policy.
 
-   Use the applicable [`targer script`](target/) to configure a Linux host with SSH-based remote shutdown support.
+2. **Proxmox VE Mode**:
+   - Transfer setup script (`setup-proxmox-proxmox-ve-8.3-1-host.sh`) to Proxmox VE host.
+   - Run script as root.
+   - Provisions `gatekeeper@pve` user, custom `gatekeeper` role with `Sys.PowerMgmt` privileges, and generates API token credentials.
 
-   - Transfer the setup script to the target machine.
-   - Execute the script as root.
-   - When prompted, paste your SSH public key. This key will be restricted to executing only the `shutdown now` command.
-   - The script will:
-      - Create a system user named `gatekeeper`
-      - Configure the `authorized_keys` with command-only access
-      - Grant passwordless shutdown rights to 'gatekeeper' using sudoers
-
-   Once complete, the host will be ready to accept secure remote shutdown commands over SSH.
-
-2. Proxmox Mode
-
-   Use the [`setup-proxmox-host.sh`](target/setup-proxmox-host.sh) script to configure a Proxmox VE node for remote shutdown via the Proxmox API.
-
-   - Transfer the setup script to the target machine.
-   - Execute the script as root.
-   - The script will:
-      - Create the Proxmox user `gatekeeper@pve`
-      - Generate an API token named `shutdown` and show its token ID and secret
-      - Create a role and group named `gatekeeper` with `Sys.PowerMgmt` privileges only
-      - Assign the role to the user via the group
-   - Store the token secret securely. This will be required by the Watchdog client for authenticated shutdown requests.
-   
-   Once complete, the Proxmox host will be ready to receive secure remote shutdown instructions via its API.
+3. **Windows 11 Pro Mode**:
+   - Ensure Wake-on-LAN (Magic Packet) is enabled on the network interface and BIOS/UEFI settings.
 
 ## Pi-hole Split DNS Configuration
 
-1. Configure LAN devices via DHCP or router to use the Pi-hole LAN IP as their DNS server.
+1. Configure LAN devices or local router DHCP settings to use Pi-hole's local IP address for DNS resolution.
 
 2. Tailscale Admin Console Configuration:
-
-   2.1. Navigate to `DNS > Nameservers > Add nameserver > Custom`
-
-   2.2. Nameserver: Enter the Pi-hole Tailscale IP as the IPv4 address for name resolution.
-
-   2.3. Restrict to domain: Enable this option and add your service domain.
-
-   2.4. Use with exit node: Disable this option to ensure the nameserver applies independently of exit nodes.
-
-   2.5. Save the configuration.
+   - Navigate to `DNS > Nameservers > Add nameserver > Custom`.
+   - **Nameserver**: Enter Pi-hole's Tailscale IP address.
+   - **Restrict to domain**: Enable option and specify service base domain.
+   - **Use with exit node**: Disable option.
+   - Save configuration.
